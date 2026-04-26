@@ -37,6 +37,11 @@ const calculateDaysRemaining = (expireTime) => {
 };
 
 const genResult = (code, message, data) => ({ code, message, data });
+const safeJson = (val, fallback) => {
+  if (val == null) return fallback;
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return fallback; }
+};
 
 // 8题计分配置
 const CUSTOMER_SCORE_MAP = {
@@ -231,12 +236,12 @@ app.get('/api/customer/get', async (req, res) => {
     res.json(genResult(0, '查询成功', {
       id: c.id,
       customerName: c.customer_name,
-      answers: JSON.parse(c.answers || '[]'),
+      answers: safeJson(c.answers, []),
       resultCode: c.result_code,
       personalityName: c.personality_name,
       themeColor: c.theme_color,
-      tags: JSON.parse(c.tags || '[]'),
-      advice: JSON.parse(c.advice || '{}'),
+      tags: safeJson(c.tags, []),
+      advice: safeJson(c.advice, {}),
       createdAt: c.created_at,
     }));
   } catch (error) {
@@ -338,8 +343,8 @@ app.get('/api/evaluation/selfToday', async (req, res) => {
       modeName: e.mode_name,
       energyScore: e.energy_score,
       strategyScore: e.strategy_score,
-      targetCustomers: JSON.parse(e.target_customers || '[]'),
-      avoidCustomers: JSON.parse(e.avoid_customers || '[]'),
+      targetCustomers: safeJson(e.target_customers, []),
+      avoidCustomers: safeJson(e.avoid_customers, []),
       evaluatedAt: e.evaluated_at,
     }));
   } catch (error) {
