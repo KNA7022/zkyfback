@@ -305,20 +305,17 @@ app.post('/api/evaluation/selfSubmit', async (req, res) => {
       return res.json(genResult(403, 'VIP会员专属功能', null));
     }
 
-    // 检查今日是否已评估
-    const today = new Date().toISOString().split('T')[0];
-    const [todayRows] = await pool.query('SELECT * FROM self_evaluations WHERE user_id = ? AND evaluated_at = ?', [openId, today]);
-    if (todayRows.length > 0) {
-      return res.json(genResult(429, '今日已评估，明天再来', null));
-    }
-
     // 计算结果
+    const today = new Date().toISOString().split('T')[0];
     const result = calculateSelfEval(answers);
 
-    // 保存
+    // INSERT 或 UPDATE（同一天重复评估会更新结果）
+    const placeholders = [openId, JSON.stringify(answers), result.energyScore, result.strategyScore, result.mode, result.modeName, JSON.stringify(result.targetCustomers), JSON.stringify(result.avoidCustomers), today];
     const [insertResult] = await pool.query(
-      'INSERT INTO self_evaluations (user_id, answers, energy_score, strategy_score, mode, mode_name, target_customers, avoid_customers, evaluated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [openId, JSON.stringify(answers), result.energyScore, result.strategyScore, result.mode, result.modeName, JSON.stringify(result.targetCustomers), JSON.stringify(result.avoidCustomers), today]
+      `INSERT INTO self_evaluations (user_id, answers, energy_score, strategy_score, mode, mode_name, target_customers, avoid_customers, evaluated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE answers=VALUES(answers), energy_score=VALUES(energy_score), strategy_score=VALUES(strategy_score), mode=VALUES(mode), mode_name=VALUES(mode_name), target_customers=VALUES(target_customers), avoid_customers=VALUES(avoid_customers)`,
+      placeholders
     );
 
     res.json(genResult(0, '评估完成', { evaluationId: insertResult.insertId, ...result }));
