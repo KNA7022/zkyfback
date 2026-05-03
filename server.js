@@ -517,8 +517,8 @@ app.post('/api/order/getPayParams', async (req, res) => {
       outOrderNo: outOrderNo,
       totalAmount: product.priceCent,
       orderEntrySchema: {
-        path: 'pages/vip/vip',
-        params: '{}',
+        path: 'pages/orderDetail/orderDetail',
+        params: JSON.stringify({ orderId: outOrderNo }),
       },
       payExpireSeconds: 1800, // 30分钟
     });
