@@ -2,6 +2,106 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const forge = require('node-forge');
+
+// 抖音支付配置
+const PAY_CONFIG = {
+  appId: 'tt5d0a2bb7c369754e01',
+  clientKey: 'tt5d0a2bb7c369754e01',
+  clientSecret: 'd68832817673ca73305b162c82b525cdd5784d3b',
+  privateKey: `-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAnP9YUV4K03mgXtOi9DsjHA940YW29FxVvrxKO7KJCFzYUhQ1
+9O/dxvj2jbV38sEz0TmIFzQIRXW9qgDidgSxDZLnr6FUd0NrT4S3vGR7TcRgDM0S
+/jl1EnZPSEgBX2KAPPYuzB22oKRKpBz2r5jMF5gZmnE5warW0pTxjGqOd3M4UdCn
+j7VPGFeVQdkn+QjYM3t+8n3PkR9SOune9TIMNfGhq7TowzVPDyfwQG5aaIkgVBPT
+6r+W5jT/2hvzhcePoxxgAEcXOlvTP1yi8t1pkugLqpD4mbp9vv6U7is53FITu5vJ
+YfTtOyQ2yyBoxf8/dJbX61e/zgfPR6wG3VFlSwIDAQABAoIBACAfOpHDXRGxw/dC
+9AdmhiN6ouyzoCBVOBIDcmjOea0lWflJO1T3Mvg//io2Y+leUFzRmZ+tvLeBhKHg
+9nTRNuyhDxhnOOICAFXPwMwh/vyFXmWgG++6D9MMM+KFIQrEG5rdf+uxdKlflAoK
+Bwschz2YmDx6SCfw7W0+nkFtl+KmdWdKVGDiNEU4PhLnbQtFRa7k6JUyf4sH/r9D
+vjB/5hIRFqj94lRiasYiuZrswt+/irHCqsYDOgpSkOlCkZrveaDYckmFxgRvJEAB
+JRfvbIMdPJR9w8x1LG5yGQpgQSIqPOgp2DTOhoJGOzHx9ART86tjPCuUK85PpsXo
++0Ka8zECgYEAyvas+jH7ds/lEofXZSFNgVVDWkpwlLWnUw7Fmx9P95V30fOUKT9L
+aFBbbntHsDaegg9um8RgmWYJCchd/UzmaNZKGJo902p9gg5HF3SjGvSBuRY80r2B
+z0C5OpckN3oF/FBf8ARRHcDR8XUmh5umd4XpeiiR0475yk1Ir1wuPpkCgYEAxgW/
+W10HDG7tIXiNF85tmVeN+Fyedw/xAQARmpBx8cQi0OHe+KHkdQtAXCqPFLd5SB7u
+tkaFel5jEwjf1T3D8xzj76dnpMsrOXBdjobxWW72M//xGEglpjvcKu0jscB9BaML
+HsBjFW73gAoQmW7Fmnzaxk9vFi50lAVom5y9ZYMCgYBeU4pMtRIDQ9dYZ12JmJKm
+uvOUcOgllM7w4Pqhf0nw7LxFDQkcqlfnYQE9NXo5wQiltXpYVkn2wN8OdtqHsEed
+DYpeKMD3EpTF7tDHa+Op0VzAoj8eSgicQ55SRpAEYGeLveb4a2kvhL+Nkj6X45TY
+E5pQta4gPmCEzqorJZIwcQKBgQDArvMGWbz0EjPXb9AKrCjlHtbcJnNjczWVPZXj
+ik31bF5cVox57j24zhvwEtFq3SS8Uq0A3Bohehp5eRckDZfPxfrdRU2Kgs8qcvX2
+K8RIu7oB2zej4wAPgwu3EUy8N4rvozi80YMYZgOaqTCBu9G3g2n1sXFsagOxzJl/
+YcLBNQKBgBx5udoet+wTOdIphsX0pUSsCjQqLVkVoyY9h/VK1zizwcRbKUkhKMjD
+PSZSQy644OP3H0GO9OMw1QZJ99zXwti9F0SGQdAlhOwj+WyHMfT2tktqTvuJP585
+7BsNrc/bHrBkAaK+zyg1OiHayrtJVZRQqVSPMe2lLmLL1zIhBRfS
+-----END RSA PRIVATE KEY-----`,
+  tagGroupId: 'tag_group_7272625659888058380',
+};
+
+// 生成随机字符串
+function generateRandomString(length) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// 生成签名
+function generateSignature(privateKeyStr, method, uri, timestamp, nonce, data) {
+  const rawStr = method + '\n' + uri + '\n' + timestamp + '\n' + nonce + '\n' + data + '\n';
+
+  // 使用 forge.pki.privateKeyFromPem 直接解析 PKCS1 格式私钥
+  const privateKey = forge.pki.privateKeyFromPem(privateKeyStr);
+
+  const md = forge.md.sha256.create();
+  md.update(rawStr, 'utf8');
+  const signatureBytes = privateKey.sign(md);
+  return forge.util.encode64(signatureBytes);
+}
+
+// 生成 byteAuthorization
+function generateByteAuthorization(privateKeyStr, data, appId) {
+  const nonceStr = generateRandomString(32);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const keyVersion = '1';
+
+  const signature = generateSignature(privateKeyStr, 'POST', '/requestOrder', timestamp, nonceStr, data);
+
+  const byteAuthorization = `SHA256-RSA2048 appid=${appId},nonce_str=${nonceStr},timestamp=${timestamp},key_version=${keyVersion},signature=${signature}`;
+
+  return { byteAuthorization, timestamp, nonceStr };
+}
+
+// 平台公钥（用于验签支付回调）
+const PLATFORM_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtshrdzmSBa2orNQ30VJa
+Umc6D72sToUjghN5fkZVhOeMsKCHvYJHd5tYNzEU+jbe7sVrdR4QjlIWeguAFF2c
+RiryqZyE83LKHZo/rAhDuNaBQ18qwkbcYEw9ICeTkO6gxNWrK83aczS1eGQFMJZj
+JKRMfYwPxXbkiHScyiiKI5NLlC/Yjdg84vSK2YPHtVOVbp+6gZFwaNkS+PhbuZu/
+WU+FW6uEYYBoQvAEAxlpsnm0DYkNeRKKEha2gN7g8R/HoOJyMXvNJJrvWK82MRCO
+PnLabHzT0P+b9nBbp9ZQjjO7+nDZdlFMiPNrIMwqNoBCWu6A4Fis9ArP/OJOdY22
+twIDAQAB
+-----END PUBLIC KEY-----`;
+
+// 验证支付回调签名
+function verifyCallbackSignature(timestamp, nonce, body, signature) {
+  try {
+    const rawStr = timestamp + '\n' + nonce + '\n' + body + '\n';
+
+    const publicKey = forge.pki.publicKeyFromPem(PLATFORM_PUBLIC_KEY);
+    const md = forge.md.sha256.create();
+    md.update(rawStr, 'utf8');
+
+    const signatureBytes = forge.util.decode64(signature);
+    return publicKey.verify(md, signatureBytes);
+  } catch (e) {
+    console.error('验签失败:', e);
+    return false;
+  }
+}
 
 const app = express();
 app.use(cors());
@@ -356,8 +456,9 @@ const PRODUCT_CONFIG = {
   weekly: { name: '周卡', price: 29, priceCent: 2900 },
   monthly: { name: '月卡VIP', price: 69, priceCent: 6900 },
   '180days': { name: '180天VIP', price: 199, priceCent: 19900 },
+  test1fen: { name: '测试卡', price: 0.01, priceCent: 1 },
 };
-const DURATION_MAP = { once: 0, weekly: 7, monthly: 30, '180days': 180 };
+const DURATION_MAP = { once: 0, weekly: 7, monthly: 30, '180days': 180, test1fen: 0 };
 
 app.post('/api/order/create', async (req, res) => {
   try {
@@ -383,41 +484,143 @@ app.post('/api/order/create', async (req, res) => {
   }
 });
 
-app.post('/api/order/callback', async (req, res) => {
+// 获取支付下单参数 (data 和 byteAuthorization)
+app.post('/api/order/getPayParams', async (req, res) => {
   try {
-    const { out_order_id, status, transaction_id, pay_time } = req.body;
-    if (!out_order_id) return res.json(genResult(400, '订单号不能为空'));
+    const { openId } = req;
+    const { productType } = req.body;
 
-    const [orders] = await pool.query('SELECT * FROM orders WHERE order_id = ?', [out_order_id]);
-    if (orders.length === 0) return res.json(genResult(404, '订单不存在'));
-    const order = orders[0];
-    if (order.status === 'paid') return res.json(genResult(0, '已处理'));
-
-    await pool.query('UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ? WHERE order_id = ?',
-      ['paid', transaction_id, pay_time ? new Date(pay_time * 1000) : new Date(), out_order_id]);
-
-    // 开通服务
-    const duration = DURATION_MAP[order.product_type] || 0;
-    const expireTime = duration > 0 ? new Date(Date.now() + duration * 24 * 60 * 60 * 1000) : null;
-
-    switch (order.product_type) {
-      case 'once':
-        await pool.query('UPDATE users SET free_times = free_times + 1 WHERE open_id = ?', [order.user_id]);
-        break;
-      case 'weekly':
-        await pool.query('UPDATE users SET weekly_is_active = 1, weekly_expire_time = ? WHERE open_id = ?', [expireTime, order.user_id]);
-        break;
-      case 'monthly':
-      case '180days':
-        await pool.query('UPDATE users SET vip_is_vip = 1, vip_type = ?, vip_start_time = ?, vip_expire_time = ? WHERE open_id = ?',
-          [order.product_type, new Date(), expireTime, order.user_id]);
-        break;
+    if (!PRODUCT_CONFIG[productType]) {
+      return res.json(genResult(400, '无效的产品类型', null));
     }
 
-    res.json(genResult(0, 'success'));
+    const product = PRODUCT_CONFIG[productType];
+    const outOrderNo = 'ORDER' + Date.now() + Math.floor(Math.random() * 10000);
+
+    // 保存订单到数据库
+    await pool.query(
+      'INSERT INTO orders (order_id, user_id, product_type, amount, status) VALUES (?, ?, ?, ?, ?)',
+      [outOrderNo, openId, productType, product.priceCent, 'pending']
+    );
+
+    // 构造 data 参数
+    const data = JSON.stringify({
+      skuList: [{
+        skuId: productType,
+        price: product.priceCent,
+        quantity: 1,
+        title: product.name,
+        imageList: ['https://xxx.com/images/vip.png'], // 需要替换为实际图片
+        type: 401, // 虚拟商品
+        tagGroupId: PAY_CONFIG.tagGroupId,
+      }],
+      outOrderNo: outOrderNo,
+      totalAmount: product.priceCent,
+      orderEntrySchema: {
+        path: 'pages/vip/vip',
+        params: '{}',
+      },
+      payExpireSeconds: 1800, // 30分钟
+    });
+
+    // 生成 byteAuthorization
+    const { byteAuthorization, timestamp, nonceStr } = generateByteAuthorization(
+      PAY_CONFIG.privateKey,
+      data,
+      PAY_CONFIG.appId
+    );
+
+    console.log('生成支付参数:', { outOrderNo, productType, amount: product.priceCent });
+    console.log('byteAuthorization:', byteAuthorization);
+
+    res.json(genResult(0, '获取成功', {
+      data,
+      byteAuthorization,
+      outOrderNo,
+      timestamp,
+      nonceStr,
+    }));
+  } catch (error) {
+    console.error('GetPayParams error:', error);
+    res.status(500).json(genResult(500, '服务器错误', null));
+  }
+});
+
+app.post('/api/order/callback', async (req, res) => {
+  try {
+    // 抖音支付回调格式
+    // Header: Byte-Timestamp, Byte-Nonce-Str, Byte-Signature
+    const timestamp = req.headers['byte-timestamp'];
+    const nonceStr = req.headers['byte-nonce-str'];
+    const signature = req.headers['byte-signature'];
+
+    // 获取原始 body 字符串用于验签
+    const rawBody = JSON.stringify(req.body);
+    const { msg, type, version } = req.body;
+
+    console.log('支付回调:', { timestamp, nonceStr, signature, msg, type, version });
+
+    // 验签
+    if (!verifyCallbackSignature(timestamp, nonceStr, rawBody, signature)) {
+      console.error('签名验证失败');
+      return res.status(401).json({ err_no: 1, err_tips: '签名验证失败' });
+    }
+
+    // 解析 msg
+    let msgData;
+    try {
+      msgData = JSON.parse(msg);
+    } catch (e) {
+      console.error('解析msg失败:', e);
+      return res.json({ err_no: 1, err_tips: 'parse error' });
+    }
+
+    const { out_order_no, order_id, status, total_amount, discount_amount, pay_channel, channel_pay_id, merchant_uid, message, event_time, user_bill_pay_id } = msgData;
+
+    if (!out_order_no) {
+      return res.json({ err_no: 1, err_tips: '缺少订单号' });
+    }
+
+    const [orders] = await pool.query('SELECT * FROM orders WHERE order_id = ?', [out_order_no]);
+    if (orders.length === 0) {
+      console.error('订单不存在:', out_order_no);
+      return res.json({ err_no: 404, err_tips: '订单不存在' });
+    }
+
+    const order = orders[0];
+    if (order.status === 'paid') {
+      return res.json({ err_no: 0, err_tips: 'success' });
+    }
+
+    // 更新订单状态
+    await pool.query('UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ?, pay_channel = ?, channel_pay_id = ? WHERE order_id = ?',
+      [status === 'SUCCESS' ? 'paid' : status, order_id, new Date(event_time), pay_channel, channel_pay_id, out_order_no]);
+
+    // 开通服务
+    if (status === 'SUCCESS') {
+      const duration = DURATION_MAP[order.product_type] || 0;
+      const expireTime = duration > 0 ? new Date(Date.now() + duration * 24 * 60 * 60 * 1000) : null;
+
+      switch (order.product_type) {
+        case 'once':
+        case 'test1fen':
+          await pool.query('UPDATE users SET free_times = free_times + 1 WHERE open_id = ?', [order.user_id]);
+          break;
+        case 'weekly':
+          await pool.query('UPDATE users SET weekly_is_active = 1, weekly_expire_time = ? WHERE open_id = ?', [expireTime, order.user_id]);
+          break;
+        case 'monthly':
+        case '180days':
+          await pool.query('UPDATE users SET vip_is_vip = 1, vip_type = ?, vip_start_time = ?, vip_expire_time = ? WHERE open_id = ?',
+            [order.product_type, new Date(), expireTime, order.user_id]);
+          break;
+      }
+    }
+
+    res.json({ err_no: 0, err_tips: 'success' });
   } catch (error) {
     console.error('Order callback error:', error);
-    res.status(500).json(genResult(500, '服务器错误'));
+    res.status(500).json({ err_no: 500, err_tips: '服务器错误' });
   }
 });
 
