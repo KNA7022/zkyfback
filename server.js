@@ -580,7 +580,7 @@ app.post('/api/order/getPayParams', async (req, res) => {
         price: product.priceCent,
         quantity: 1,
         title: product.name,
-        imageList: ['https://xxx.com/images/vip.png'], // 需要替换为实际图片
+        imageList: ['https://img.tukuppt.com/png_preview/03/00/06/TWDEiqXjmc.jpg'], // 需要替换为实际图片
         type: 301, // 虚拟商品
         tagGroupId: PAY_CONFIG.tagGroupId,
       }],
