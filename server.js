@@ -511,7 +511,7 @@ app.post('/api/order/getPayParams', async (req, res) => {
         quantity: 1,
         title: product.name,
         imageList: ['https://xxx.com/images/vip.png'], // 需要替换为实际图片
-        type: 401, // 虚拟商品
+        type: 301, // 虚拟商品
         tagGroupId: PAY_CONFIG.tagGroupId,
       }],
       outOrderNo: outOrderNo,
