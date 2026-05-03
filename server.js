@@ -664,9 +664,9 @@ app.post('/api/order/callback', async (req, res) => {
       return res.json({ err_no: 0, err_tips: 'success' });
     }
 
-    // 更新订单状态
-    await pool.query('UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ?, pay_channel = ?, channel_pay_id = ? WHERE order_id = ?',
-      [status === 'SUCCESS' ? 'paid' : status, order_id, new Date(event_time), pay_channel, channel_pay_id, out_order_no]);
+    // 更新订单状态（只更新表中存在的字段）
+    await pool.query('UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ? WHERE order_id = ?',
+      [status === 'SUCCESS' ? 'paid' : status, order_id, new Date(event_time), out_order_no]);
 
     // 开通服务
     if (status === 'SUCCESS') {
@@ -735,13 +735,13 @@ app.post('/api/order/checkStatus', async (req, res) => {
       return res.json(genResult(1, douyinResult.err_msg || '查询失败'));
     }
 
-    const { pay_status, trade_time, pay_channel, channel_pay_id } = douyinResult.data;
+    const { pay_status, trade_time, channel_pay_id } = douyinResult.data;
 
     // 如果支付成功，更新本地订单并开通服务
     if (pay_status === 'SUCCESS') {
       await pool.query(
-        'UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ?, pay_channel = ?, channel_pay_id = ? WHERE order_id = ?',
-        ['paid', douyinResult.data.order_id, new Date(trade_time), pay_channel, channel_pay_id, outOrderNo]
+        'UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ? WHERE order_id = ?',
+        ['paid', douyinResult.data.order_id, new Date(trade_time), outOrderNo]
       );
 
       // 开通服务
