@@ -103,6 +103,76 @@ function verifyCallbackSignature(timestamp, nonce, body, signature) {
   }
 }
 
+// 获取抖音 API access_token (client_token)
+let cachedToken = null;
+let tokenExpireTime = 0;
+
+async function getAccessToken() {
+  // 如果有缓存且未过期，直接返回
+  if (cachedToken && Date.now() < tokenExpireTime) {
+    return cachedToken;
+  }
+
+  try {
+    const response = await fetch(`https://open.douyin.com/oauth/client_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_key: PAY_CONFIG.clientKey,
+        client_secret: PAY_CONFIG.clientSecret,
+        grant_type: 'client_credential',
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.data && data.data.access_token) {
+      cachedToken = data.data.access_token;
+      // 提前5分钟过期
+      tokenExpireTime = Date.now() + (data.data.expires_in - 300) * 1000;
+      console.log('获取 access_token 成功');
+      return cachedToken;
+    } else {
+      console.error('获取 access_token 失败:', data);
+      return null;
+    }
+  } catch (error) {
+    console.error('获取 access_token 异常:', error);
+    return null;
+  }
+}
+
+// 查询抖音订单状态
+async function queryDouyinOrderStatus(outOrderNo) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return { err_no: 1, err_msg: '获取access_token失败' };
+    }
+
+    const response = await fetch(`https://open.douyin.com/api/trade_basic/v1/developer/order_query/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access-token': accessToken,
+      },
+      body: JSON.stringify({
+        out_order_no: outOrderNo,
+      }),
+    });
+
+    const data = await response.json();
+    console.log('查询抖音订单状态:', outOrderNo, data);
+
+    return data;
+  } catch (error) {
+    console.error('查询抖音订单异常:', error);
+    return { err_no: 1, err_msg: '查询异常' };
+  }
+}
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -520,6 +590,7 @@ app.post('/api/order/getPayParams', async (req, res) => {
         path: 'pages/orderDetail/orderDetail',
         params: JSON.stringify({ orderId: outOrderNo }),
       },
+      payNotifyUrl: 'https://1ly0nidlhtk52-env-qBqHYksp5g.service.douyincloud.run/api/order/callback', // 需要替换为实际回调地址
       payExpireSeconds: 1800, // 30分钟
     });
 
@@ -531,6 +602,7 @@ app.post('/api/order/getPayParams', async (req, res) => {
     );
 
     console.log('生成支付参数:', { outOrderNo, productType, amount: product.priceCent });
+    console.log('data字符串:', data);
     console.log('byteAuthorization:', byteAuthorization);
 
     res.json(genResult(0, '获取成功', {
@@ -621,6 +693,95 @@ app.post('/api/order/callback', async (req, res) => {
   } catch (error) {
     console.error('Order callback error:', error);
     res.status(500).json({ err_no: 500, err_tips: '服务器错误' });
+  }
+});
+
+// 前端主动查询订单状态（支付成功后调用）
+app.post('/api/order/checkStatus', async (req, res) => {
+  try {
+    const { openId } = req;
+    const { outOrderNo } = req.body;
+
+    if (!outOrderNo) {
+      return res.json(genResult(400, '订单号不能为空'));
+    }
+
+    // 先查询本地订单
+    const [orders] = await pool.query('SELECT * FROM orders WHERE order_id = ?', [outOrderNo]);
+    if (orders.length === 0) {
+      return res.json(genResult(404, '订单不存在'));
+    }
+
+    const order = orders[0];
+    if (order.user_id !== openId) {
+      return res.json(genResult(403, '无权访问'));
+    }
+
+    // 如果本地订单已支付，直接返回
+    if (order.status === 'paid') {
+      return res.json(genResult(0, '已支付', {
+        orderId: order.order_id,
+        productType: order.product_type,
+        amount: order.amount / 100,
+        status: 'paid',
+        paidAt: order.paid_at,
+      }));
+    }
+
+    // 查询抖音订单状态
+    const douyinResult = await queryDouyinOrderStatus(outOrderNo);
+
+    if (douyinResult.err_no !== 0) {
+      return res.json(genResult(1, douyinResult.err_msg || '查询失败'));
+    }
+
+    const { pay_status, trade_time, pay_channel, channel_pay_id } = douyinResult.data;
+
+    // 如果支付成功，更新本地订单并开通服务
+    if (pay_status === 'SUCCESS') {
+      await pool.query(
+        'UPDATE orders SET status = ?, douyin_order_id = ?, paid_at = ?, pay_channel = ?, channel_pay_id = ? WHERE order_id = ?',
+        ['paid', douyinResult.data.order_id, new Date(trade_time), pay_channel, channel_pay_id, outOrderNo]
+      );
+
+      // 开通服务
+      const duration = DURATION_MAP[order.product_type] || 0;
+      const expireTime = duration > 0 ? new Date(Date.now() + duration * 24 * 60 * 60 * 1000) : null;
+
+      switch (order.product_type) {
+        case 'once':
+        case 'test1fen':
+          await pool.query('UPDATE users SET free_times = free_times + 1 WHERE open_id = ?', [order.user_id]);
+          break;
+        case 'weekly':
+          await pool.query('UPDATE users SET weekly_is_active = 1, weekly_expire_time = ? WHERE open_id = ?', [expireTime, order.user_id]);
+          break;
+        case 'monthly':
+        case '180days':
+          await pool.query('UPDATE users SET vip_is_vip = 1, vip_type = ?, vip_start_time = ?, vip_expire_time = ? WHERE open_id = ?',
+            [order.product_type, new Date(), expireTime, order.user_id]);
+          break;
+      }
+
+      return res.json(genResult(0, '支付成功', {
+        orderId: outOrderNo,
+        productType: order.product_type,
+        amount: order.amount / 100,
+        status: 'paid',
+        paidAt: new Date(trade_time).toISOString(),
+      }));
+    }
+
+    // 支付未完成，返回当前状态
+    return res.json(genResult(0, '查询成功', {
+      orderId: outOrderNo,
+      productType: order.product_type,
+      amount: order.amount / 100,
+      status: pay_status === 'PROCESS' ? 'pending' : pay_status.toLowerCase(),
+    }));
+  } catch (error) {
+    console.error('Check order status error:', error);
+    res.status(500).json(genResult(500, '服务器错误'));
   }
 });
 
