@@ -588,7 +588,7 @@ app.post('/api/order/getPayParams', async (req, res) => {
       totalAmount: product.priceCent,
       orderEntrySchema: {
         path: 'pages/orderDetail/orderDetail',
-        params: JSON.stringify({ orderId: outOrderNo }),
+        params: `{"orderId":"${outOrderNo}"}`,
       },
       payNotifyUrl: 'https://1ly0nidlhtk52-env-qBqHYksp5g.service.douyincloud.run/api/order/callback', // 需要替换为实际回调地址
       payExpireSeconds: 1800, // 30分钟
